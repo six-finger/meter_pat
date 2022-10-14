@@ -1,0 +1,16 @@
+{
+    "version": "0.9.0",
+    "task": "Detector",
+    "models": [
+        {
+            "name": "yolox",
+            "net": "end2end.onnx",
+            "weights": "",
+            "backend": "onnxruntime",
+            "precision": "FP32",
+            "batch_size": 1,
+            "dynamic_shape": true
+        }
+    ],
+    "customs": []
+}
