@@ -44,7 +44,7 @@ def draw_img(raw_img, value_list):
                                 (0, 0, 255), 2)
         raw_img = cv2.putText(raw_img,
                               '{}: {}'.format(meter_cls, meter_value),
-                              (int(meter_local[0]), int(meter_local[1]) + 25),
+                              (int(meter_local[0]), int(meter_local[1]) + 32),
                               cv2.FONT_HERSHEY_SIMPLEX,
                               fontScale=1,
                               color=(255, 0, 0),
@@ -60,6 +60,7 @@ class Meter_Read:
         self.filenum = 0
         self.processList = []
         self.meterList = []
+        self.noneList = []
         self.filenameList = []
         self.img_path = None
 
@@ -82,11 +83,17 @@ class Meter_Read:
     def getCnt(self):
         return self.cnt
 
-    def updateMeter(self, filename, img, cls, cnt):
-        self.meterList.append([filename, img, cls, cnt])
+    def updateMeterElem(self, filepath, img, cls, cnt, value):
+        self.meterList.append([filepath, img, cls, cnt, value])
 
-    def getMeter(self):
+    def getMeterElem(self):
         return self.meterList
+
+    def updateNoneList(self, filepath):
+        self.noneList.append(filepath)
+
+    def getNoneList(self):
+        return self.noneList
 
     def setFilenameList(self, filename):
         self.filenameList = [v.split('/')[-1] for v in filename]
@@ -111,10 +118,10 @@ class Meter_Read:
         xmin, ymin, xmax, ymax = int(meter_local[0]), int(meter_local[1]), int(meter_local[2]), int(meter_local[3])
         each_img = raw_img[ymin:ymax, xmin:xmax].copy()
         each_img = cv2.resize(each_img, (150, 150))
-        color = (0, 255, 0) if 0.01 < float(meter_value) < 30.0 else (255, 0, 0)
+        color = (0, 255, 0) if 0.01 < float(meter_value) < 30.0 else (0, 0, 255)
         each_img = cv2.putText(each_img,
                                str(meter_value),
-                               (0, 14),
+                               (0, 20),
                                cv2.FONT_HERSHEY_TRIPLEX,
                                fontScale=0.5,
                                color=color,
@@ -122,12 +129,12 @@ class Meter_Read:
         return each_img
 
     def meter_read_from_image(self, path, model_step1, model_step2, visual=None):
-        self.updateProcess('{}'.format(path))
+        self.updateProcess('\n{}'.format(path))
         img = path
         if isinstance(img, str):
             img = cv2.imread(img)
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        self.updateProcess('{} {}'.format(str(datetime.now()), '检测全局图'))
+        self.updateProcess('{} {}'.format(datetime.now().strftime('%Y-%m-%d %H:%M:%S'), '检测全局图'))
         bboxes, labels, _ = model_step1(img)
 
         meter_list = []
@@ -138,7 +145,8 @@ class Meter_Read:
                     continue
                 meter_list.append(Meter(idx, v[0:4]))
         self.updatePace(self.getPace() + 5 / 10 / self.getFilenum())
-        self.updateProcess('{} {}'.format(str(datetime.now()), '检测图中每个仪表'))
+        self.updateProcess('{} {}'.format(datetime.now().strftime('%Y-%m-%d %H:%M:%S'), '检测图中每个仪表'))
+
         value_list = []
         raw_img = cv2.imread(path)
         for meter in meter_list:
@@ -149,16 +157,19 @@ class Meter_Read:
                 meter_elements = split_predict_arr(bboxes, labels, STEP2_THRES)
                 meter.update_indication(cal_indication(meter_elements, meter.cls_int))
             except Exception:
-                value_list.append([meter.cls_name, meter.pos, -1])
-                continue
-            value_list.append([meter.cls_name, meter.pos, meter.indication])
+                pass
+            finally:
+                value_list.append([meter.cls_name, meter.pos, meter.indication])
+                each_img = self.crop_img(raw_img, meter)
+                self.updateMeterElem(path, each_img, min(meter.cls_int, 2), self.getCnt(), meter.indication)
 
-            each_img = self.crop_img(raw_img, meter)
-            file_name = path.split('/')[-1]
-            self.updateMeter(file_name, each_img, min(meter.cls_int, 2), self.getCnt())
+
             # if (len(self.getFilenameList()) > 0 and self.getFilenameList()[-1] != file_name) \
             #         or len(self.getFilenameList()) == 0:
             #     self.setFilenameList(file_name)
+
+        if len(meter_list) == 0:
+            self.updateNoneList(path)
 
         # if visual is not None:
         #     raw_img = cv2.imread(path)
@@ -170,7 +181,7 @@ class Meter_Read:
         return value_list
 
     def detect_from_dir(self, path):
-        self.updateProcess('{} {}'.format(str(datetime.now()), '加载模型...'))
+        self.updateProcess('{} {}'.format(datetime.now().strftime('%Y-%m-%d %H:%M:%S'), '加载模型...'))
         model1 = Detector(model_path=MODEL_PATH_STEP1, device_name='cpu', device_id=0)
         model2 = Detector(model_path=MODEL_PATH_STEP2, device_name='cpu', device_id=0)
         file_list = []
@@ -190,8 +201,8 @@ class Meter_Read:
             self.setCurrent(img_path)
             res = self.meter_read_from_image(img_path, model1, model2, 'res_test1_onnx')
             self.updateProcess(
-                '{} {}'.format(str(datetime.now()), ('  '.join(['{}:{}'.format(v[0], v[2]) for v in res]))))
-        self.updateProcess('{} {}'.format(str(datetime.now()), '检测完成'))
+                '{} {}'.format(datetime.now().strftime('%Y-%m-%d %H:%M:%S'), ('  '.join(['{}:{}'.format(v[0], v[2]) for v in res]))))
+        self.updateProcess('{} {}'.format(datetime.now().strftime('%Y-%m-%d %H:%M:%S'), '检测完成'))
         self.updatePace(1)
 
     def detect_single_img(self, path):
